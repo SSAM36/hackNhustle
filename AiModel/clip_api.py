@@ -53,9 +53,10 @@ class ModelState:
         self.device = None
         self.qdrant_url = None
         self.headers = None
-        self.collection = "clip_videos"
+        self.collection = "hybrid_signs"  # Single collection with named vectors
         self.hands = None
         self.pose = None
+        self.face = None
         
 model_state = ModelState()
 
@@ -89,14 +90,21 @@ async def load_model():
             pose_base = python.BaseOptions(model_asset_path='models/pose_landmarker_lite.task')
             pose_opts = vision.PoseLandmarkerOptions(base_options=pose_base)
             model_state.pose = vision.PoseLandmarker.create_from_options(pose_opts)
-            print("✓ MediaPipe Tasks API initialized")
+            
+            face_base = python.BaseOptions(model_asset_path='models/face_landmarker.task')
+            face_opts = vision.FaceLandmarkerOptions(base_options=face_base, num_faces=1)
+            model_state.face = vision.FaceLandmarker.create_from_options(face_opts)
+            
+            print("✓ MediaPipe initialized (hands, pose, face)")
         except:
             model_state.hands = None
             model_state.pose = None
+            model_state.face = None
             print("⚠ MediaPipe models not found")
     else:
         model_state.hands = None
         model_state.pose = None
+        model_state.face = None
         
 raw_url = os.getenv('q_url', 'http://localhost:6333').rstrip('/')
 
@@ -163,18 +171,25 @@ def crop_upper_body(image: Image.Image, padding: float = 0.2) -> Image.Image:
     return Image.fromarray(img_array[y_min:y_max, x_min:x_max])
 
 def extract_landmarks(image: Image.Image) -> np.ndarray:
-    """Extract normalized hand + upper body landmarks"""
+    """Extract 358D landmarks (hands + pose + face + geometric)"""
     if not model_state.hands or not model_state.pose:
-        return np.zeros(138)
+        return np.zeros(358)
     
     img_array = np.array(image)
+    h, w = img_array.shape[:2]
+    if max(h, w) > 640:
+        scale = 640 / max(h, w)
+        img_array = cv2.resize(img_array, (int(w*scale), int(h*scale)))
+    
     mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_array)
     hand_results = model_state.hands.detect(mp_img)
     pose_results = model_state.pose.detect(mp_img)
+    face_results = model_state.face.detect(mp_img) if model_state.face else None
     
     landmarks = np.zeros(138)
+    geometric = []
     
-    # Normalize hand landmarks relative to wrist
+    # Hands (126D)
     if hand_results.hand_landmarks:
         for i, hand_landmarks in enumerate(hand_results.hand_landmarks[:2]):
             offset = i * 63
@@ -183,23 +198,43 @@ def extract_landmarks(image: Image.Image) -> np.ndarray:
                 landmarks[offset + j*3] = lm.x - wrist.x
                 landmarks[offset + j*3 + 1] = lm.y - wrist.y
                 landmarks[offset + j*3 + 2] = lm.z - wrist.z
+            
+            tips = [hand_landmarks[i] for i in [4, 8, 12, 16, 20]]
+            for i in range(len(tips)):
+                for j in range(i+1, len(tips)):
+                    geometric.append(np.sqrt((tips[i].x-tips[j].x)**2+(tips[i].y-tips[j].y)**2+(tips[i].z-tips[j].z)**2))
     
-    # Normalize pose landmarks relative to elbow midpoint
+    # Pose (12D)
     if pose_results.pose_landmarks:
         for landmarks_list in pose_results.pose_landmarks:
             left_elbow = landmarks_list[13]
             right_elbow = landmarks_list[14]
-            elbow_center_x = (left_elbow.x + right_elbow.x) / 2
-            elbow_center_y = (left_elbow.y + right_elbow.y) / 2
-            elbow_center_z = (left_elbow.z + right_elbow.z) / 2
-            
+            center_x = (left_elbow.x + right_elbow.x) / 2
+            center_y = (left_elbow.y + right_elbow.y) / 2
+            center_z = (left_elbow.z + right_elbow.z) / 2
             for i, idx in enumerate([11, 12, 13, 14]):
                 lm = landmarks_list[idx]
-                landmarks[126 + i*3] = lm.x - elbow_center_x
-                landmarks[126 + i*3 + 1] = lm.y - elbow_center_y
-                landmarks[126 + i*3 + 2] = lm.z - elbow_center_z
+                landmarks[126 + i*3] = lm.x - center_x
+                landmarks[126 + i*3 + 1] = lm.y - center_y
+                landmarks[126 + i*3 + 2] = lm.z - center_z
     
-    return landmarks
+    # Face (60D)
+    face_features = np.zeros(60)
+    if face_results and face_results.face_landmarks:
+        face_landmarks = face_results.face_landmarks[0]
+        nose = face_landmarks[1]
+        key_indices = [1, 33, 61, 291, 199, 10, 152, 234, 454, 93, 323, 168, 6, 197, 195, 5, 4, 263, 362, 386]
+        for i, idx in enumerate(key_indices):
+            if idx < len(face_landmarks):
+                lm = face_landmarks[idx]
+                face_features[i*3] = lm.x - nose.x
+                face_features[i*3 + 1] = lm.y - nose.y
+                face_features[i*3 + 2] = lm.z - nose.z
+    
+    while len(geometric) < 160:
+        geometric.append(0.0)
+    
+    return np.concatenate([landmarks, geometric[:160], face_features])
 
 def encode_image(image: Image.Image) -> np.ndarray:
     """Encode image to vector with enhanced preprocessing"""
@@ -229,55 +264,36 @@ def encode_image(image: Image.Image) -> np.ndarray:
     
     return features.cpu().numpy().flatten()
 
-def search_qdrant(img_vector: np.ndarray, landmark_vector: np.ndarray, top_k: int = 15, img_weight: float = 0.35, landmark_weight: float = 0.65) -> List[dict]:
-    """Search Qdrant with combined image + landmark vectors and improved scoring"""
+def search_qdrant(img_vector: np.ndarray, landmark_vector: np.ndarray, top_k: int = 15, alpha: float = 0.6, beta: float = 0.4) -> List[dict]:
+    """Search using hybrid named vectors"""
     try:
-        # Search image collection with score threshold
         r1 = requests.post(
             f"{model_state.qdrant_url}/collections/{model_state.collection}/points/search",
-            json={"vector": img_vector.tolist(), "limit": top_k * 2, "with_payload": True, "score_threshold": 0.3},
+            json={"vector": {"name": "clip", "vector": img_vector.tolist()}, "limit": top_k * 2, "with_payload": True},
             headers=model_state.headers,
             timeout=5
         )
         
-        # Search landmark collection with score threshold
         r2 = requests.post(
-            f"{model_state.qdrant_url}/collections/hand_landmarks/points/search",
-            json={"vector": landmark_vector.tolist(), "limit": top_k * 2, "with_payload": True, "score_threshold": 0.3},
+            f"{model_state.qdrant_url}/collections/{model_state.collection}/points/search",
+            json={"vector": {"name": "landmarks", "vector": landmark_vector.tolist()}, "limit": top_k * 2, "with_payload": True},
             headers=model_state.headers,
             timeout=5
         )
         
-        # Combine scores with configurable weights
         combined = {}
-        img_scores = {}
-        landmark_scores = {}
-        
         if r1.status_code == 200:
             for hit in r1.json().get('result', []):
                 label = hit["payload"]["label"]
-                score = hit["score"]
-                img_scores[label] = score
-                combined[label] = score * img_weight
+                combined[label] = alpha * hit["score"]
         
         if r2.status_code == 200:
             for hit in r2.json().get('result', []):
                 label = hit["payload"]["label"]
-                score = hit["score"]
-                landmark_scores[label] = score
-                combined[label] = combined.get(label, 0) + score * landmark_weight
+                combined[label] = combined.get(label, 0) + beta * hit["score"]
         
-        # Boost labels that appear in both searches (more reliable)
-        for label in combined:
-            if label in img_scores and label in landmark_scores:
-                combined[label] *= 1.15  # 15% boost for dual presence
-        
-        # Filter low scores and sort
-        filtered = {k: v for k, v in combined.items() if v > 0.35}
-        sorted_results = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:top_k]
-        
+        sorted_results = sorted(combined.items(), key=lambda x: x[1], reverse=True)[:top_k]
         return [{"label": label, "score": min(score, 1.0)} for label, score in sorted_results]
-        
     except Exception as e:
         print(f"Search error: {e}")
         return []
@@ -293,7 +309,7 @@ async def health():
     }
 
 @app.post("/search", response_model=SearchResponse)
-async def search_image(file: UploadFile = File(...), top_k: int = 8, img_weight: float = 0.35, landmark_weight: float = 0.65):
+async def search_image(file: UploadFile = File(...), top_k: int = 8, alpha: float = 0.6, beta: float = 0.4):
     """
     Upload an image and get top matching labels
     
@@ -323,7 +339,7 @@ async def search_image(file: UploadFile = File(...), top_k: int = 8, img_weight:
         landmark_vector = extract_landmarks(image)
         
         # Search
-        results = search_qdrant(img_vector, landmark_vector, top_k, img_weight, landmark_weight)
+        results = search_qdrant(img_vector, landmark_vector, top_k, alpha, beta)
         
         processing_time = (time.time() - start) * 1000
         
@@ -362,7 +378,7 @@ async def search_batch(files: List[UploadFile] = File(...), top_k: int = 5):
             cropped = crop_upper_body(image, padding=0.2)
             img_vector = encode_image(cropped)
             landmark_vector = extract_landmarks(image)
-            results = search_qdrant(img_vector, landmark_vector, top_k, 0.4, 0.6)
+            results = search_qdrant(img_vector, landmark_vector, top_k, 0.6, 0.4)
             processing_time = (time.time() - start) * 1000
             
             responses.append(SearchResponse(

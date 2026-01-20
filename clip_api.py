@@ -97,25 +97,25 @@ async def load_model():
     else:
         model_state.hands = None
         model_state.pose = None
-        print("⚠ MediaPipe not available")
-    
-    # Qdrant setup
-    raw_url = os.getenv('q_url', 'http://localhost:6333')
-    if 'cloud.qdrant.io' in raw_url:
-        if not raw_url.startswith('http'):
-            raw_url = f"https://{raw_url}"
-        raw_url = raw_url.replace('https://', '').replace('http://', '').rstrip(':6333').rstrip(':443')
-        model_state.qdrant_url = f"https://{raw_url}:6333"
-    else:
-        model_state.qdrant_url = raw_url.rstrip('/')
-    
-    api_key = os.getenv('q_api', '')
-    model_state.headers = {'Content-Type': 'application/json'}
-    if api_key:
-        model_state.headers['api-key'] = api_key
-    
-    print(f"✓ Model loaded on {model_state.device}")
-    print(f"✓ Qdrant: {model_state.qdrant_url}")
+        
+raw_url = os.getenv('q_url', 'http://localhost:6333').rstrip('/')
+
+if 'cloud.qdrant.io' in raw_url:
+    # Qdrant Cloud → HTTPS, no port
+    if not raw_url.startswith('http'):
+        raw_url = f"https://{raw_url}"
+    model_state.qdrant_url = raw_url
+else:
+    # Local Qdrant
+    model_state.qdrant_url = raw_url
+
+api_key = os.getenv('q_api', '')
+model_state.headers = {'Content-Type': 'application/json'}
+if api_key:
+    model_state.headers['api-key'] = api_key
+
+print(f"✓ Model loaded on {model_state.device}")
+print(f"✓ Qdrant: {model_state.qdrant_url}")
 
 def crop_upper_body(image: Image.Image, padding: float = 0.2) -> Image.Image:
     """Crop to upper body with MediaPipe Tasks API"""
@@ -202,11 +202,25 @@ def extract_landmarks(image: Image.Image) -> np.ndarray:
     return landmarks
 
 def encode_image(image: Image.Image) -> np.ndarray:
-    """Encode image to vector"""
+    """Encode image to vector with enhanced preprocessing"""
     if image.mode != 'RGB':
         image = image.convert('RGB')
     
+    # Convert to numpy for preprocessing
+    img_array = np.array(image)
+    
+    # Apply histogram equalization for better contrast
+    lab = cv2.cvtColor(img_array, cv2.COLOR_RGB2LAB)
+    lab[:,:,0] = cv2.equalizeHist(lab[:,:,0])
+    img_array = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+    
+    # Slight denoising while preserving edges
+    img_array = cv2.bilateralFilter(img_array, 5, 50, 50)
+    
+    # Convert back to PIL and resize
+    image = Image.fromarray(img_array)
     image = image.resize((384, 384), Image.Resampling.LANCZOS)
+    
     inputs = model_state.processor(images=image, return_tensors="pt").to(model_state.device)
     
     with torch.no_grad():
@@ -215,41 +229,54 @@ def encode_image(image: Image.Image) -> np.ndarray:
     
     return features.cpu().numpy().flatten()
 
-def search_qdrant(img_vector: np.ndarray, landmark_vector: np.ndarray, top_k: int = 10, img_weight: float = 0.4, landmark_weight: float = 0.6) -> List[dict]:
-    """Search Qdrant with combined image + landmark vectors"""
+def search_qdrant(img_vector: np.ndarray, landmark_vector: np.ndarray, top_k: int = 15, img_weight: float = 0.35, landmark_weight: float = 0.65) -> List[dict]:
+    """Search Qdrant with combined image + landmark vectors and improved scoring"""
     try:
-        # Search image collection
+        # Search image collection with score threshold
         r1 = requests.post(
             f"{model_state.qdrant_url}/collections/{model_state.collection}/points/search",
-            json={"vector": img_vector.tolist(), "limit": top_k, "with_payload": True},
+            json={"vector": img_vector.tolist(), "limit": top_k * 2, "with_payload": True, "score_threshold": 0.3},
             headers=model_state.headers,
             timeout=5
         )
         
-        # Search landmark collection
+        # Search landmark collection with score threshold
         r2 = requests.post(
             f"{model_state.qdrant_url}/collections/hand_landmarks/points/search",
-            json={"vector": landmark_vector.tolist(), "limit": top_k, "with_payload": True},
+            json={"vector": landmark_vector.tolist(), "limit": top_k * 2, "with_payload": True, "score_threshold": 0.3},
             headers=model_state.headers,
             timeout=5
         )
         
         # Combine scores with configurable weights
         combined = {}
+        img_scores = {}
+        landmark_scores = {}
         
         if r1.status_code == 200:
             for hit in r1.json().get('result', []):
                 label = hit["payload"]["label"]
-                combined[label] = hit["score"] * img_weight
+                score = hit["score"]
+                img_scores[label] = score
+                combined[label] = score * img_weight
         
         if r2.status_code == 200:
             for hit in r2.json().get('result', []):
                 label = hit["payload"]["label"]
-                combined[label] = combined.get(label, 0) + hit["score"] * landmark_weight
+                score = hit["score"]
+                landmark_scores[label] = score
+                combined[label] = combined.get(label, 0) + score * landmark_weight
         
-        # Sort by combined score
-        sorted_results = sorted(combined.items(), key=lambda x: x[1], reverse=True)[:top_k]
-        return [{"label": label, "score": score} for label, score in sorted_results]
+        # Boost labels that appear in both searches (more reliable)
+        for label in combined:
+            if label in img_scores and label in landmark_scores:
+                combined[label] *= 1.15  # 15% boost for dual presence
+        
+        # Filter low scores and sort
+        filtered = {k: v for k, v in combined.items() if v > 0.35}
+        sorted_results = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        
+        return [{"label": label, "score": min(score, 1.0)} for label, score in sorted_results]
         
     except Exception as e:
         print(f"Search error: {e}")
@@ -266,7 +293,7 @@ async def health():
     }
 
 @app.post("/search", response_model=SearchResponse)
-async def search_image(file: UploadFile = File(...), top_k: int = 5, img_weight: float = 0.4, landmark_weight: float = 0.6):
+async def search_image(file: UploadFile = File(...), top_k: int = 8, img_weight: float = 0.35, landmark_weight: float = 0.65):
     """
     Upload an image and get top matching labels
     

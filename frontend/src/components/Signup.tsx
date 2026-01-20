@@ -1,13 +1,48 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authAPI } from '../services/api';
 
 export default function Signup() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/');
+    setLoading(true);
+    setError('');
+    
+    try {
+      await authAPI.register({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password
+      });
+      
+      // Auto login after registration
+      const loginResponse = await authAPI.login({
+        username: formData.username,
+        password: formData.password
+      });
+      
+      localStorage.setItem('token', loginResponse.data.token);
+      localStorage.setItem('user', JSON.stringify(loginResponse.data.user));
+      
+      navigate('/');
+    } catch (error: any) {
+      setError(error.response?.data?.error || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
   };
 
   return (
@@ -52,15 +87,19 @@ export default function Signup() {
             <form className="space-y-5 flex-1" onSubmit={handleSubmit}>
               {/* Name Input */}
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-gray-400 ml-1">Full Name</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-400 ml-1">Username</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
                     <span className="material-symbols-outlined text-gray-400 group-focus-within:text-primary">person</span>
                   </div>
                   <input 
+                    name="username"
+                    value={formData.username}
+                    onChange={handleInputChange}
                     className="block w-full pl-12 pr-5 py-4 bg-background-light dark:bg-black/20 border-transparent rounded-xl text-base text-[#111717] dark:text-white placeholder-gray-400 focus:border-primary/50 focus:bg-white dark:focus:bg-black/30 focus:ring-4 focus:ring-primary/10 transition-all duration-200" 
-                    placeholder="John Doe" 
+                    placeholder="john_doe" 
                     type="text"
+                    required
                   />
                 </div>
               </div>
@@ -73,9 +112,13 @@ export default function Signup() {
                     <span className="material-symbols-outlined text-gray-400 group-focus-within:text-primary">mail</span>
                   </div>
                   <input 
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
                     className="block w-full pl-12 pr-5 py-4 bg-background-light dark:bg-black/20 border-transparent rounded-xl text-base text-[#111717] dark:text-white placeholder-gray-400 focus:border-primary/50 focus:bg-white dark:focus:bg-black/30 focus:ring-4 focus:ring-primary/10 transition-all duration-200" 
                     placeholder="hello@signlingo.com" 
                     type="email"
+                    required
                   />
                 </div>
               </div>
@@ -88,9 +131,13 @@ export default function Signup() {
                     <span className="material-symbols-outlined text-gray-400 group-focus-within:text-primary">lock</span>
                   </div>
                   <input 
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
                     className="block w-full pl-12 pr-12 py-4 bg-background-light dark:bg-black/20 border-transparent rounded-xl text-base text-[#111717] dark:text-white placeholder-gray-400 focus:border-primary/50 focus:bg-white dark:focus:bg-black/30 focus:ring-4 focus:ring-primary/10 transition-all duration-200" 
                     placeholder="••••••••" 
                     type={showPassword ? 'text' : 'password'}
+                    required
                   />
                   <button 
                     className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" 
@@ -102,13 +149,30 @@ export default function Signup() {
                 </div>
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
               <div className="pt-2">
                 <button 
-                  className="w-full py-4 bg-primary hover:bg-teal-700 text-white font-bold text-lg rounded-full shadow-[0_8px_20px_-6px_rgba(15,117,109,0.4)] transform hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2" 
+                  className="w-full py-4 bg-primary hover:bg-teal-700 text-white font-bold text-lg rounded-full shadow-[0_8px_20px_-6px_rgba(15,117,109,0.4)] transform hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" 
                   type="submit"
+                  disabled={loading}
                 >
-                  <span>Create Account</span>
-                  <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Creating Account...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Create Account</span>
+                      <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                    </>
+                  )}
                 </button>
               </div>
 

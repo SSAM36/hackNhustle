@@ -1,9 +1,90 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { authAPI } from '../services/api'
 import BottomNav from './BottomNav'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const storedUser = localStorage.getItem('user')
+        
+        if (!token) {
+          navigate('/login')
+          return
+        }
+
+        // First try to use stored user data
+        if (storedUser) {
+          try {
+            const userData = JSON.parse(storedUser)
+            setUser(userData)
+            setLoading(false)
+            return
+          } catch (e) {
+            console.log('Invalid stored user data, fetching from API')
+          }
+        }
+
+        // If no stored user or invalid data, fetch from API
+        const response = await authAPI.getProfile()
+        setUser(response.data.user)
+        localStorage.setItem('user', JSON.stringify(response.data.user))
+      } catch (error) {
+        console.error('Error fetching user data:', error)
+        // Don't immediately redirect on API error, try stored data first
+        const storedUser = localStorage.getItem('user')
+        if (storedUser) {
+          try {
+            const userData = JSON.parse(storedUser)
+            setUser(userData)
+            setLoading(false)
+            return
+          } catch (e) {
+            // If stored data is also invalid, then redirect
+            localStorage.removeItem('token')
+            localStorage.removeItem('user')
+            navigate('/login')
+          }
+        } else {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          navigate('/login')
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUserData()
+  }, [])
+
+  const getGreeting = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) return 'Good Morning'
+    if (hour < 17) return 'Good Afternoon'
+    return 'Good Evening'
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    navigate('/login')
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-md bg-background-light dark:bg-background-dark relative flex flex-col h-screen overflow-hidden items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="mt-4 text-slate-600 dark:text-slate-400">Loading...</p>
+      </div>
+    )
+  }
   return (
     <div className="w-full max-w-md bg-background-light dark:bg-background-dark relative flex flex-col h-screen overflow-hidden">
       {/* Main Content Scroll Area */}
@@ -13,13 +94,24 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full bg-slate-200 bg-cover bg-center border-2 border-white dark:border-slate-700 shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuAIwt2hFBU6I0cc0sLC2SgI5SSOjR6FuDMAA9T8r4NBJeLnEOsJsf9zks-1bAoRj2SOaavh3Tf6K3lwKTF4NWrtPgVGyQ02yEDspUBXqVLMXIimd7O6E5wRx9rJa7CD5rLF4TZCyZt-UuTB5thBKa-MqUZ2m-YA30j0FlamSysBZV2NTfxAvCc-gP9ayFfx2ASEzeXmGMljedp03lgBsVbhX1qPCaiFriH8Bu9mGOs0ULRajy8A8FGmWoWPBtIYySOYPFAM7zsb8JAm')" }} />
             <div>
-              <h1 className="text-sm font-bold text-slate-800 dark:text-white leading-tight">Good Morning, Alex</h1>
+              <h1 className="text-sm font-bold text-slate-800 dark:text-white leading-tight">
+                {getGreeting()}, {user?.username || 'User'}
+              </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Ready to learn?</p>
             </div>
           </div>
-          <div className="bg-[#FFF1F2] dark:bg-[#FB7185]/20 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-[#FB7185]/20">
-            <span className="material-symbols-outlined text-[#FB7185] text-[18px]">local_fire_department</span>
-            <span className="text-[#FB7185] font-bold text-sm">12</span>
+          <div className="flex items-center gap-2">
+            <div className="bg-[#FFF1F2] dark:bg-[#FB7185]/20 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-[#FB7185]/20">
+              <span className="material-symbols-outlined text-[#FB7185] text-[18px]">local_fire_department</span>
+              <span className="text-[#FB7185] font-bold text-sm">12</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              title="Logout"
+            >
+              <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 text-[18px]">logout</span>
+            </button>
           </div>
         </header>
 

@@ -189,22 +189,21 @@ export default function Dashboard() {
         {/* Horizontal Scroll Tools */}
         <section className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 -mx-5 px-5">
           {[
-            { icon: 'style', title: 'Flashcards', subtitle: 'Review', color: 'orange' },
-            { icon: 'trophy', title: 'Daily Quiz', subtitle: 'Challenge', color: 'purple', badge: true },
-            { icon: 'menu_book', title: 'Dictionary', subtitle: 'ASL Library', color: 'blue' },
-            { icon: 'group', title: 'Community', subtitle: 'Connect', color: 'emerald' }
+            { icon: 'style', title: 'Flashcards', subtitle: 'Review', color: 'orange', path: '/flashcards' },
+            { icon: 'trophy', title: 'Daily Quiz', subtitle: 'Challenge', color: 'purple', badge: true, path: '/daily-quest' },
+            { icon: 'menu_book', title: 'Dictionary', subtitle: 'ISL Library', color: 'blue', path: '/dictionary' }
           ].map((tool, i) => (
-            <div key={i} className="min-w-[140px] aspect-square bg-white dark:bg-surface-dark rounded-3xl p-4 flex flex-col items-center justify-center gap-3 shadow-soft border border-slate-50 dark:border-slate-800 text-center relative overflow-hidden">
+            <div 
+              key={i} 
+              onClick={() => tool.path && navigate(tool.path)}
+              className={`min-w-[140px] aspect-square bg-white dark:bg-surface-dark rounded-3xl p-4 flex flex-col items-center justify-center gap-3 shadow-soft border border-slate-50 dark:border-slate-800 text-center relative overflow-hidden ${tool.path ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+            >
               {tool.badge && <div className="absolute top-2 right-2 w-2 h-2 bg-accent rounded-full" />}
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{
                 backgroundColor: tool.color === 'orange' ? '#fed7aa' : 
-                                tool.color === 'purple' ? '#e9d5ff' : 
-                                tool.color === 'blue' ? '#dbeafe' : 
-                                tool.color === 'green' ? '#dcfce7' : '#d1fae5',
+                                tool.color === 'purple' ? '#e9d5ff' : '#dbeafe',
                 color: tool.color === 'orange' ? '#ea580c' : 
-                       tool.color === 'purple' ? '#9333ea' : 
-                       tool.color === 'blue' ? '#2563eb' : 
-                       tool.color === 'green' ? '#16a34a' : '#059669'
+                       tool.color === 'purple' ? '#9333ea' : '#2563eb'
               }}>
                 <span className="material-symbols-outlined">{tool.icon}</span>
               </div>

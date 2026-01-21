@@ -21,6 +21,10 @@ function App() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/translate" element={<Translator />} />
       <Route path="/sign-to-word" element={<SignToWord />} />
+      <Route path="/lessons" element={<Lessons />} />
+      <Route path="/flashcards" element={<Flashcards />} />
+      <Route path="/dictionary" element={<Dictionary />} />
+      <Route path="/daily-quest" element={<DailyQuest />} />
       <Route path="/practice" element={<Practice />} />
       <Route path="/tracing" element={<TracingPad />} />
       <Route path="/profile" element={<UserProfile />} />

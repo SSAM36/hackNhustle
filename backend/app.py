@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from functools import wraps
 from models import User, Role, Video, PracticeSession, AnalyticsEvent
 from bson import ObjectId
+import requests
+import base64
+import io
 
 load_dotenv()
 
@@ -27,6 +30,15 @@ CORS(app,
      }})
 
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'fallback_secret_key')
+
+# Add CORS headers to all responses
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 # Swagger API Documentation
 api = Api(
@@ -51,30 +63,49 @@ user_ns = api.namespace('user', description='User operations')
 video_ns = api.namespace('videos', description='Video operations')
 convert_ns = api.namespace('convert', description='ISL Conversion operations')
 
-# MongoDB setup
+# MongoDB setup with error handling
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
-client = MongoClient(MONGO_URI)
-db = client['thadomal_db']
 
-# Collections
-users_collection = db['users']
-roles_collection = db['roles']
-videos_collection = db['videos']
-practice_sessions_collection = db['practice_sessions']
-analytics_events_collection = db['analytics_events']
-glyphs_collection = db['glyphs']
-alphabet_collection = db['alphabet']
-vocabulary_collection = db['vocabulary']
-sentences_collection = db['sentences']
-stem_modules_collection = db['stem_modules']
-stem_lessons_collection = db['stem_lessons']
-stem_questions_collection = db['stem_questions']
-feedback_collection = db['feedback']
+try:
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000
+    )
+    # Test connection
+    client.admin.command('ping')
+    print(f"✓ MongoDB connected successfully!")
+    db = client['thadomal_db']
+except Exception as e:
+    print(f"✗ MongoDB connection failed: {str(e)}")
+    print("⚠️  Running WITHOUT database - some features may not work!")
+    client = None
+    db = None
+
+# Collections (will be None if no DB connection)
+users_collection = db['users'] if db is not None else None
+roles_collection = db['roles'] if db is not None else None
+videos_collection = db['videos'] if db is not None else None
+practice_sessions_collection = db['practice_sessions'] if db is not None else None
+analytics_events_collection = db['analytics_events'] if db is not None else None
+glyphs_collection = db['glyphs'] if db is not None else None
+alphabet_collection = db['alphabet'] if db is not None else None
+vocabulary_collection = db['vocabulary'] if db is not None else None
+sentences_collection = db['sentences'] if db is not None else None
+stem_modules_collection = db['stem_modules'] if db is not None else None
+stem_lessons_collection = db['stem_lessons'] if db is not None else None
+stem_questions_collection = db['stem_questions'] if db is not None else None
+feedback_collection = db['feedback'] if db is not None else None
 
 # JWT Token decorator
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Check if database is available
+        if users_collection is None:
+            return jsonify({'error': 'Database unavailable'}), 503
+            
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({'error': 'Token missing'}), 401
@@ -106,14 +137,32 @@ def token_required(f):
 
 @app.route('/')
 def home():
-    return jsonify({'message': 'Flask backend is running!'})
+    """Root endpoint - API status"""
+    return jsonify({
+        'status': 'online',
+        'message': 'ISL Learning Platform API is running!',
+        'version': '1.0.0',
+        'docs': '/docs/',
+        'health': '/health',
+        'database': 'connected' if db is not None else 'disconnected',
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
 
 @app.route('/test', methods=['GET', 'POST'])
 def test_route():
+    """Test endpoint for debugging"""
     if request.method == 'GET':
-        return jsonify({'message': 'Test route working - GET method'})
+        return jsonify({
+            'message': 'Test route working - GET method',
+            'cors': 'enabled',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
     else:
-        return jsonify({'message': 'Test route working - POST method', 'data': request.get_json()})
+        return jsonify({
+            'message': 'Test route working - POST method',
+            'data': request.get_json(),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
 
 @auth_ns.route('/register')
 class Register(Resource):

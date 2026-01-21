@@ -14,7 +14,18 @@ from bson import ObjectId
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+# CORS Configuration for Production
+CORS(app, 
+     resources={r"/*": {
+         "origins": ["*"],
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization"],
+         "expose_headers": ["Content-Type", "Authorization"],
+         "supports_credentials": True,
+         "max_age": 3600
+     }})
+
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'fallback_secret_key')
 
 # Swagger API Documentation
@@ -1764,9 +1775,14 @@ def mark_chapter_complete(current_user):
         return jsonify({'error': f'Progress update error: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    # Get environment
+    is_production = os.getenv('ENVIRONMENT', 'development') == 'production'
+    port = int(os.getenv('PORT', 5002))
+    
     print("Starting Flask app with Swagger documentation...")
-    print("Swagger UI available at: http://localhost:5002/docs/")
-    print("API Base URL: http://localhost:5002/")
+    print(f"Environment: {'Production' if is_production else 'Development'}")
+    print(f"Swagger UI available at: http://localhost:{port}/docs/" if not is_production else f"Swagger UI available at: /docs/")
+    print(f"API Base URL: http://localhost:{port}/" if not is_production else "API Base URL: (Railway URL)")
     print(f"MongoDB URI: {MONGO_URI.split('@')[1] if '@' in MONGO_URI else 'local'}")
     print("\nAPI Endpoints Summary:")
     print("1. Authentication & User Management: 4 APIs")
@@ -1778,4 +1794,9 @@ if __name__ == '__main__':
     print("7. Utility & System: 2 APIs")
     print("\nTotal: 21 APIs Ready!")
     print("\n" + "="*50)
-    app.run(debug=True, port=5002, host='0.0.0.0')
+    
+    # Run app with appropriate settings
+    if is_production:
+        app.run(debug=False, port=port, host='0.0.0.0')
+    else:
+        app.run(debug=True, port=port, host='0.0.0.0')

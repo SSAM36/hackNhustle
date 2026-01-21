@@ -1,8 +1,74 @@
 import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { authAPI } from '../services/api';
 import BottomNav from './BottomNav';
 
 export default function UserProfile() {
   const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    username: '',
+    email: '',
+    bio: ''
+  });
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+
+        const response = await authAPI.getProfile();
+        setUser(response.data.user);
+        setEditData({
+          username: response.data.user.username || '',
+          email: response.data.user.email || '',
+          bio: response.data.user.bio || 'ISL learner passionate about sign language'
+        });
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        navigate('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      // Update user data (mock for now)
+      setUser({ ...user, ...editData });
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditData({
+      username: user?.username || '',
+      email: user?.email || '',
+      bio: user?.bio || 'ISL learner passionate about sign language'
+    });
+    setIsEditing(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-background-light dark:bg-background-dark min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display antialiased selection:bg-primary selection:text-white pb-32 min-h-screen">
@@ -13,8 +79,13 @@ export default function UserProfile() {
             <span className="material-symbols-outlined text-slate-800 dark:text-white" style={{ fontSize: '24px' }}>arrow_back</span>
           </button>
           <h1 className="text-lg font-bold text-slate-800 dark:text-white tracking-tight">Profile</h1>
-          <button className="flex items-center justify-center p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
-            <span className="material-symbols-outlined text-slate-800 dark:text-white" style={{ fontSize: '24px' }}>edit</span>
+          <button 
+            onClick={() => setIsEditing(!isEditing)}
+            className="flex items-center justify-center p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+          >
+            <span className="material-symbols-outlined text-slate-800 dark:text-white" style={{ fontSize: '24px' }}>
+              {isEditing ? 'close' : 'edit'}
+            </span>
           </button>
         </div>
       </header>
@@ -31,12 +102,56 @@ export default function UserProfile() {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <h2 className="text-3xl font-extrabold text-primary dark:text-emerald-400 tracking-tight">Priya</h2>
-            <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-emerald-300 text-sm font-semibold">
-              <span className="material-symbols-outlined text-[18px]">workspace_premium</span>
-              Level 12 Signer
-            </div>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">Member since 2023</p>
+            {isEditing ? (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={editData.username}
+                  onChange={(e) => setEditData({...editData, username: e.target.value})}
+                  className="text-3xl font-extrabold text-primary dark:text-emerald-400 tracking-tight bg-transparent border-b-2 border-primary text-center focus:outline-none"
+                  placeholder="Username"
+                />
+                <input
+                  type="email"
+                  value={editData.email}
+                  onChange={(e) => setEditData({...editData, email: e.target.value})}
+                  className="text-sm text-slate-500 dark:text-slate-400 bg-transparent border-b border-slate-300 text-center focus:outline-none w-full"
+                  placeholder="Email"
+                />
+                <textarea
+                  value={editData.bio}
+                  onChange={(e) => setEditData({...editData, bio: e.target.value})}
+                  className="text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700 rounded-lg p-3 w-full resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Bio"
+                  rows="2"
+                />
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={handleSave}
+                    className="px-4 py-2 bg-primary text-white rounded-full text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-full text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-3xl font-extrabold text-primary dark:text-emerald-400 tracking-tight">{user?.username || 'User'}</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300">{user?.email}</p>
+                <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-emerald-300 text-sm font-semibold">
+                  <span className="material-symbols-outlined text-[18px]">workspace_premium</span>
+                  Level 12 Signer
+                </div>
+                <p className="text-slate-500 dark:text-slate-400 text-sm">{editData.bio}</p>
+                <p className="text-slate-500 dark:text-slate-400 text-xs">Member since 2023</p>
+              </>
+            )}
           </div>
         </section>
 

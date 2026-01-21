@@ -6,6 +6,7 @@ import Login from './components/Login'
 import Signup from './components/Signup'
 import Practice from './components/Practice'
 import TracingPad from './components/TracingPad'
+import Lessons from './components/Lessons'
 import { Routes, Route } from 'react-router-dom'
 import './index.css'
 
@@ -19,6 +20,7 @@ function App() {
       <Route path="/sign-to-word" element={<SignToWord />} />
       <Route path="/practice" element={<Practice />} />
       <Route path="/tracing" element={<TracingPad />} />
+      <Route path="/lessons" element={<Lessons />} />
       <Route path="/profile" element={<UserProfile />} />
       <Route path="/stats" element={<Dashboard />} />
     </Routes>

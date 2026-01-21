@@ -106,6 +106,13 @@ export default function Dashboard() {
               <span className="text-[#FB7185] font-bold text-sm">12</span>
             </div>
             <button 
+              onClick={() => navigate('/sign-to-word')}
+              className="p-2 rounded-full bg-primary text-white hover:bg-primary-dark transition-colors shadow-lg"
+              title="Scan Signs"
+            >
+              <span className="material-symbols-outlined text-[18px]">videocam</span>
+            </button>
+            <button 
               onClick={handleLogout}
               className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               title="Logout"
@@ -133,7 +140,10 @@ export default function Dashboard() {
               <span className="absolute text-xs font-bold text-slate-800 dark:text-white">75%</span>
             </div>
           </div>
-          <button className="w-full bg-slate-900 dark:bg-primary text-white dark:text-slate-900 h-12 rounded-full font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 dark:hover:bg-primary-dark transition-colors relative z-10 shadow-lg shadow-slate-200 dark:shadow-none">
+          <button 
+            onClick={() => navigate('/lessons')}
+            className="w-full bg-slate-900 dark:bg-primary text-white dark:text-slate-900 h-12 rounded-full font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 dark:hover:bg-primary-dark transition-colors relative z-10 shadow-lg shadow-slate-200 dark:shadow-none cursor-pointer"
+          >
             <span>Continue Lesson</span>
             <span className="material-symbols-outlined text-sm">arrow_forward</span>
           </button>
@@ -179,14 +189,25 @@ export default function Dashboard() {
         {/* Horizontal Scroll Tools */}
         <section className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 -mx-5 px-5">
           {[
-            { icon: 'style', title: 'Flashcards', subtitle: 'Review', color: 'orange' },
-            { icon: 'trophy', title: 'Daily Quiz', subtitle: 'Challenge', color: 'purple', badge: true },
-            { icon: 'menu_book', title: 'Dictionary', subtitle: 'ASL Library', color: 'blue' },
-            { icon: 'group', title: 'Community', subtitle: 'Connect', color: 'emerald' }
+            { icon: 'school', title: 'STEM Lessons', subtitle: 'Learn Math & Science', color: 'green', route: '/lessons' },
+            { icon: 'edit', title: 'Practice', subtitle: 'Tracing Pad', color: 'blue', route: '/tracing' }
           ].map((tool, i) => (
-            <div key={i} className="min-w-[140px] aspect-square bg-white dark:bg-surface-dark rounded-3xl p-4 flex flex-col items-center justify-center gap-3 shadow-soft border border-slate-50 dark:border-slate-800 text-center relative overflow-hidden">
+            <div 
+              key={i} 
+              onClick={() => tool.route && navigate(tool.route)}
+              className="min-w-[140px] aspect-square bg-white dark:bg-surface-dark rounded-3xl p-4 flex flex-col items-center justify-center gap-3 shadow-soft border border-slate-50 dark:border-slate-800 text-center relative overflow-hidden cursor-pointer hover:scale-105 transition-transform"
+            >
               {tool.badge && <div className="absolute top-2 right-2 w-2 h-2 bg-accent rounded-full" />}
-              <div className={`w-12 h-12 rounded-2xl bg-${tool.color}-50 dark:bg-${tool.color}-900/20 flex items-center justify-center text-${tool.color}-500`}>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{
+                backgroundColor: tool.color === 'orange' ? '#fed7aa' : 
+                                tool.color === 'purple' ? '#e9d5ff' : 
+                                tool.color === 'blue' ? '#dbeafe' : 
+                                tool.color === 'green' ? '#dcfce7' : '#d1fae5',
+                color: tool.color === 'orange' ? '#ea580c' : 
+                       tool.color === 'purple' ? '#9333ea' : 
+                       tool.color === 'blue' ? '#2563eb' : 
+                       tool.color === 'green' ? '#16a34a' : '#059669'
+              }}>
                 <span className="material-symbols-outlined">{tool.icon}</span>
               </div>
               <div>

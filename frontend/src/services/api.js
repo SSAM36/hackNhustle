@@ -25,6 +25,16 @@ export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   getRole: () => api.get('/auth/role'),
   getProfile: () => api.get('/user/profile'),
+  getUserProgress: () => api.get('/user/progress'),
+  markChapterComplete: (subjectId, chapterId) => api.post('/user/progress/chapter', {
+    subject_id: subjectId,
+    chapter_id: chapterId
+  }),
+  recognizeSign: (imageData, topK = 1) => api.post('/convert/sign-to-text', {
+    image_data: imageData,
+    confidence_threshold: 0.9,
+    top_k: topK
+  }),
 };
 
 // Conversion API

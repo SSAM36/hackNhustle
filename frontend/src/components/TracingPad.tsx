@@ -106,7 +106,7 @@ export default function TracingPad({ debug = true }: { debug?: boolean }) {
                     const lastLine = data.lines[data.lines.length - 1];
                     if (lastLine.points && lastLine.points.length > 0) {
                       const lastPoint = lastLine.points[lastLine.points.length - 1];
-                      const nearestCheckpoint = CHECKPOINTS_A[0];
+                      const nearestCheckpoint = LETTER_CHECKPOINTS[targetLetter]?.[0] || { x: 50, y: 50 };
                       const dist = Math.sqrt(
                         Math.pow(lastPoint.x - nearestCheckpoint.x, 2) + 
                         Math.pow(lastPoint.y - nearestCheckpoint.y, 2)
